@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OOBE Emulator</title>
+<link rel="stylesheet" href="oobe.css">
+</head>
+<body>
+<main class="oobe-main" id="app" hidden>
+  <h1 class="oobe-title">OOBE Emulator</h1>
+  <p class="oobe-sub">Choose a vessel. Then let go.</p>
+
+  <div class="oobe-row">
+    <select id="camSelect"><option>Searching for cameras…</option></select>
+    <button id="refreshBtn" title="Rescan cameras">Rescan</button>
+  </div>
+  <video id="preview" class="oobe-preview" autoplay muted playsinline></video>
+  <div class="oobe-row">
+    <button id="enterBtn" disabled>Leave Body (Enter VR)</button>
+    <span class="oobe-status" id="status"></span>
+  </div>
+  <p class="oobe-status">In VR, squeeze either controller's grip button to Return to Body.</p>
+</main>
+
+<script type="module">
+import { runGate } from './gate.js';
+import { fillCameraSelect, openCamera, stopStream, onCamerasChanged } from './cameras.js';
+import { isVRSupported, enterOOBE } from './xr-view.js';
+
+const $ = id => document.getElementById(id);
+const status = msg => $('status').textContent = msg;
+let stream = null;
+
+await runGate(document.body);
+$('app').hidden = false;
+
+async function useCamera(id) {
+  stopStream(stream);
+  try {
+    stream = await openCamera(id);
+    $('preview').srcObject = stream;
+    const s = stream.getVideoTracks()[0].getSettings();
+    status(`Inhabiting: ${$('camSelect').selectedOptions[0]?.text || 'camera'} (${s.width}×${s.height})`);
+  } catch (e) { status('Could not open that camera: ' + e.message); }
+}
+
+async function scan() {
+  try {
+    const cams = await fillCameraSelect($('camSelect'));
+    if (cams.length) await useCamera($('camSelect').value);
+    else status('No cameras found. Plug one in and press Rescan.');
+  } catch (e) { status(e.message); }
+}
+
+$('camSelect').addEventListener('change', e => useCamera(e.target.value));
+$('refreshBtn').addEventListener('click', scan);
+onCamerasChanged(scan);
+await scan();
+
+if (await isVRSupported()) {
+  $('enterBtn').disabled = false;
+} else {
+  $('enterBtn').textContent = 'VR headset not detected';
+  status('Open this page in Chrome or Edge on the PC with SteamVR running.');
+}
+
+$('enterBtn').addEventListener('click', async () => {
+  if (!stream) return status('Pick a camera first.');
+  try {
+    await enterOOBE($('preview'), { onExit: () => status('You have returned to your body.') });
+  } catch (e) { status('Could not enter VR: ' + e.message); }
+});
+</script>
+</body>
+</html>
